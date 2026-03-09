@@ -317,13 +317,13 @@ export async function sendToAgent(
       logAt('basic', `[Claude] Resuming session ${existingSessionId} for session ${sessionKey}`);
     }
 
-    const toolsOption = config.DANGEROUS_MODE
-      ? { type: 'preset' as const, preset: 'claude_code' as const }
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task'];
+    // Always use the full claude_code preset so MCP tools (Notion, Google, etc.) are available.
+    // Auth is enforced at the Telegram level via ALLOWED_USER_IDS.
+    const toolsOption = { type: 'preset' as const, preset: 'claude_code' as const };
 
-    const allowedToolsOption = config.DANGEROUS_MODE
-      ? undefined
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task'];
+    // No allowedTools whitelist — let all configured tools be usable.
+    // Permission approval is handled by the PermissionRequest hook below (headless auto-approve).
+    const allowedToolsOption: string[] | undefined = undefined;
 
     // PreCompact hook always registered (logging only — notification sent from compact_boundary message)
     const preCompactHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
@@ -333,6 +333,18 @@ export async function sendToAgent(
             trigger: (input as Record<string, unknown>).trigger,
             customInstructions: (input as Record<string, unknown>).custom_instructions,
           });
+          return { continue: true };
+        }],
+      }],
+    };
+
+    // Auto-approve permission requests (headless mode — no interactive terminal).
+    // Auth is enforced at Telegram level via ALLOWED_USER_IDS, so tool calls are trusted.
+    const autoApproveHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
+      PermissionRequest: [{
+        hooks: [async (input) => {
+          const toolName = (input as Record<string, unknown>).tool_name || 'unknown';
+          console.log(`[Permission] Auto-approved: ${toolName}`);
           return { continue: true };
         }],
       }],
@@ -379,6 +391,7 @@ export async function sendToAgent(
       LOG_LEVELS[getLogLevel()] >= LOG_LEVELS.verbose
         ? {
           ...preCompactHook,
+          ...autoApproveHook,
           ...verboseHooks,
           SessionStart: [{
             hooks: [async (input) => {
@@ -393,7 +406,7 @@ export async function sendToAgent(
             }],
           }],
         }
-        : preCompactHook;
+        : { ...preCompactHook, ...autoApproveHook };
 
     // Validate cwd exists — stale sessions may reference paths from another OS
     let cwd = session.workingDirectory;
