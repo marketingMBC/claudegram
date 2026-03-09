@@ -68,6 +68,11 @@ const envSchema = z.object({
     .string()
     .default('20')
     .transform((val) => parseInt(val, 10)),
+  VIDEO_MAX_FILE_SIZE_MB: z
+    .string()
+    .default('50')
+    .transform((val) => parseInt(val, 10)),
+  LOCAL_WHISPER_MODEL: z.string().default('small'),
   // New config options
   DANGEROUS_MODE: z
     .string()
